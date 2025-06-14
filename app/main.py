@@ -1,26 +1,40 @@
 import sys
+import shutil
 
-BUILTINS = {
-    "exit": lambda code=0, *_: sys.exit(int(code)),
-    "echo": lambda *args: print(" ".join(args)),
-    "type": lambda cmd, *_: print(f"{cmd} is a shell builtin")
-    if cmd in BUILTINS
-    else print(f"{cmd}: not found"),
-}
+
+def echo(command):
+    echoed_command = command[5:]
+    print(echoed_command)
+
+
+def invalid(command):
+    print(f"{command}: command not found")
+
+
+def type(command):
+    types = ["echo", "exit", "type"]
+    if command[5:] in types:
+        print(f"{command[5:]} is a shell builtin")
+    elif path := shutil.which(command[5:]):
+        print(f"{command[5:]} is {path}")
+    else:
+        print(f"{command[5:]}: not found")
 
 
 def main():
-    while True:
+    true = 1
+    while true:
         sys.stdout.write("$ ")
-        sys.stdout.flush()
+        command = input()
 
-        usr_input = input().split()
-        cmd = usr_input[0]
-        args = usr_input[1:]
-        if cmd in BUILTINS:
-            BUILTINS[cmd](*args)
+        if command == "exit 0":
+            true = 0
+        elif command[:5] == "echo ":
+            echo(command)
+        elif command[:5] == "type ":
+            type(command)
         else:
-            print(f"{cmd}: command not found")
+            invalid(command)
 
 
 if __name__ == "__main__":
