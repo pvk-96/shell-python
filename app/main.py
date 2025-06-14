@@ -1,61 +1,64 @@
 import sys
-import os
+import shutil
 import subprocess
-
-
-def find_in_path(command):
-    for path in os.environ.get("PATH", "").split(":"):
-        full_path = os.path.join(path, command)
-        if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
-            return full_path
-    return None
-
-
-def type_command(*args):
-    global path
-    for cmd in args:
-        if cmd in commands:
-            print(f"{cmd} is a shell builtin")
-        else:
-            path = find_in_path(cmd)
-            if path:
-                print(f"{cmd} is {path}")
-            else:
-                print(f"{cmd}: not found")
-
-
-commands = {
-    "exit": lambda exit_code: os._exit(int(exit_code)),
-    "echo": lambda *args: print(" ".join(args)),
-    "type": type_command,
-    "pwd": lambda: print(os.getcwd()),
-}
+import os
 
 
 def main():
-    try:
-        while True:
-            sys.stdout.write("$ ")
-            sys.stdout.flush()
-            command_with_args = input().split()
+    # Uncomment this block to pass the first stage
+    builtins = {
+        "echo": "echo is a shell builtin",
+        "exit": "exit is a shell builtin",
+        "type": "type is a shell builtin",
+        "pwd": "pwd is a shell builtin",
+    }
 
-            command = command_with_args[0]
-            args = command_with_args[1:]
+    while True:
+        sys.stdout.write("$ ")
+        if command := input().strip():
+            match command.split():
 
-            if command in commands:
-                commands[command](*args)
-            else:
-                path = find_in_path(command)
-                if path:
+                # buildins commands
+                case ["echo", *args]:
+                    print(" ".join(args))
+
+                case ["exit", status]:
+                    sys.exit(int(status))
+
+                case ["type", cmd]:
+                    path = shutil.which(cmd)
+
+                    if cmd in builtins:
+                        print(f"{builtins[cmd]}")
+                    elif path:
+                        print(f"{cmd} is {path}")
+                    else:
+                        print(f"{cmd}: not found")
+
+                case ["cd", dir]:
                     try:
-                        subprocess.run([command] + args, executable=path)
-                    except Exception as e:
-                        print(f"Error executing {command}: {e}")
-                else:
-                    print(f"{command}: command not found")
+                        os.chdir(dir)
+                    except FileNotFoundError:
+                        print(f"cd: {dir}: No such file or directory")
 
-    except KeyboardInterrupt:
-        print("\nExiting...")
+                case ["pwd"]:
+                    print(os.getcwd())
+
+                # external commands
+                case [cmd, *args]:
+                    path = shutil.which(cmd)
+                    if path:
+                        try:
+                            subprocess.run([cmd] + args)
+
+                        except subprocess.CalledProcessError as e:
+                            print(e)
+
+                    else:
+                        print(f"{command}: not found")
+
+                case _:
+                    print(f"{command}: not found")
 
 
 if __name__ == "__main__":
