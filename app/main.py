@@ -10,6 +10,7 @@ SHELL_BUILTIN_COMMANDS = [
     "type",
     "pwd",
     "cd",
+    "history",
 ]
 
 
