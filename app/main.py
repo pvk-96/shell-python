@@ -169,8 +169,10 @@ def main():
         elif commands[0] == "type":
             handle_type_command(commands)
         elif commands[0] == "history":
-            for i, cmd in enumerate(HISTORY_LIST):
-                print(f"{i + 1} {cmd}")
+            if len(commands) == 1:
+                commands.append(str(len(HISTORY_LIST)))
+            for i in range(len(HISTORY_LIST) - int(commands[1]), len(HISTORY_LIST)):
+                print(f"{i + 1} {HISTORY_LIST[i]}")
         elif commands[0] == "pwd":
             print(os.getcwd())
         elif commands[0] == "cd":
