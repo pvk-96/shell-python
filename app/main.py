@@ -1,129 +1,82 @@
-import os
 import sys
+import os
 import subprocess
-from pathlib import Path
 import shlex
 
 
-class Shell:
-    """A simple shell implementation built using Python."""
+def main():
 
-    def __init__(self):
-        self.running = True
+    sys.stdout.write("$ ")
 
-    def run(self):
-        """Main shell loop"""
-        while self.running:
-            try:
-                command = self._get_user_input()
-                if command:
-                    self._execute_command(command)
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
+    # Wait for user input
+    command = input()
 
-    def _get_user_input(self):
-        """Get and parse user input"""
-        PROMPT = "$ "
-        try:
-            sys.stdout.write(PROMPT)
-            sys.stdout.flush()
-            user_input = input().strip()
-            if ">" in user_input or "1>" in user_input:  # handle redirection
-                os.system(user_input)
-                return
-            return shlex.split(user_input) if user_input else []
-        except EOFError:
-            raise
-
-    def _execute_command(self, command):
-        """Execute the given command"""
-        cmd_name = command[0]
-        match cmd_name:
-            case "exit":
-                self._handle_exit()
-            case "type":
-                self._handle_type(command)
-            case "echo":
-                self._handle_echo(command)
-            case "pwd":
-                self._handle_pwd()
-            case "cd":
-                self._handle_cd(command)
-            case _:
-                found_path = self._check_PATH(command[0])
-                if found_path:
-                    self._run_program(command)
-                else:
-                    self._handle_unknown_commands(command)
-
-    def _handle_exit(self):
-        """Handle exit command"""
-        self.running = False
-
-    def _handle_type(self, command):
-        """Handle type command"""
-        BUILTINS = {"type", "echo", "exit", "pwd"}
-        if len(command) < 2:
-            print("type: missing argument")
-            return
-
-        cmd_name = command[1]
-        if cmd_name in BUILTINS:
-            print(f"{cmd_name} is a shell builtin")
+    if ">" in command or "1>" in command or "2>" in command:
+        os.system(command)
+    elif command == "exit 0":
+        exit(0)
+    elif command.startswith("echo "):
+        args = shlex.split(command[5:])
+        print(" ".join(args))
+    elif command.strip() == "pwd":
+        print(os.getcwd())
+    elif command.strip().startswith("cd"):
+        parts = command.strip().split(maxsplit=1)
+        if len(parts) == 1 or not parts[1]:
+            pass
         else:
-            found_path = self._check_PATH(cmd_name)
-            if found_path:
-                print(f"{cmd_name} is {found_path}")
-            else:
+            path = os.path.expanduser(parts[1])
+            try:
+                os.chdir(path)
+            except FileNotFoundError:
+                print(f"cd: {path}: No such file or directory")
+    elif command.startswith("type "):
+        cmd_name = command[5:]
+        if cmd_name == "echo":
+            print("echo is a shell builtin")
+        elif cmd_name == "exit":
+            print("exit is a shell builtin")
+        elif cmd_name == "type":
+            print(f"type is a shell builtin")
+        elif cmd_name == "pwd":
+            print("pwd is a shell builtin")
+        elif cmd_name == "cd":
+            print("cd is a shell builtin")
+        else:
+            # Search for the command in the PATH
+            found = False
+            for path in os.environ.get("PATH", "").split(os.pathsep):
+                full_path = os.path.join(path, cmd_name)
+                if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
+                    print(f"{cmd_name} is {full_path}")
+                    found = True
+                    break
+            if not found:
                 print(f"{cmd_name}: not found")
 
-    def _handle_echo(self, command):
-        """Handle echo command"""
-        print(" ".join(command[1:]))
-
-    def _handle_unknown_commands(self, command):
-        """ "Handle unknown commands"""
-        print(f"{' '.join(command)}: command not found")
-
-    def _check_PATH(self, cmd_name):
-        """Check for executable files in PATH and return the first match"""
-        PATH_dirs = os.environ.get("PATH", "").split(":")
-
-        for directory in PATH_dirs:
-            if directory:
-                full_path = os.path.join(directory, cmd_name)
-                if os.path.isfile(full_path):
-                    return full_path
-        return None
-
-    def _run_program(self, command):
-        """Run program"""
-        subprocess.run([command[0]] + command[1:])
-
-    def _handle_pwd(self):
-        """Print present working directory"""
-        print(os.getcwd())
-
-    def _handle_cd(self, command):
-        """Changes directory if it exists"""
-        if len(command) < 2:
+    else:
+        parts = shlex.split(command.strip())
+        if not parts:
+            main()
             return
+        cmd_name = parts[0]
+        args = parts[1:]
+        found = False
+        for path in os.environ.get("PATH", "").split(os.pathsep):
+            full_path = os.path.join(path, cmd_name)
+            if os.path.isfile(full_path) and os.access(full_path, os.X_OK):
+                try:
+                    result = subprocess.run(
+                        [cmd_name] + args, executable=full_path, check=False
+                    )
+                except Exception as e:
+                    print(f"{cmd_name}: failed to execute")
+                found = True
+                break
+        if not found:
+            print(f"{cmd_name}: command not found")
 
-        path = command[1]
-        if path == "~":
-            home_directory = Path.home()
-            os.chdir(home_directory)
-            return
-        if os.path.isdir(path):
-            os.chdir(path)
-        else:
-            print(f"cd: {path}: No such file or directory")
-
-
-def main():
-    shell = Shell()
-    shell.run()
+    main()
 
 
 if __name__ == "__main__":
