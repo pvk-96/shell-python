@@ -1,179 +1,156 @@
-import os
 import sys
-from typing import List, Tuple
+import os
+import subprocess
+from functools import partial
 
 
-class Shell:
-    def __init__(self):
-        self.current_dir = os.getcwd()
-        self.commands = {
-            "exit": self.exit,
-            "echo": self.echo,
-            "type": self.type,
-            "pwd": self.pwd,
-            "cd": self.cd,
-        }
+def parse_any(parsers, s):
+    for parser in parsers:
+        res, remaining = parser(s)
+        if res:
+            return res, remaining
+    return None, s
 
-    def exit(self, *args, **kwargs):
-        status_code = args[0] if args else 0
-        sys.exit()
 
-    def echo(self, *args, **kwargs):
-        if args:
-            sys.stdout.write(" ".join(args))
-        sys.stdout.write("\n")
-
-    def type(self, *args, **kwargs):
-        name = args[0]
-        if name in self.commands:
-            sys.stdout.write(f"{name} is a shell builtin")
-        elif file_path := self._resolve_file_executability(name):
-            sys.stdout.write(f"{name} is {file_path}")
+def parse_char(c, s):
+    if len(s) == 0:
+        return None, s
+    else:
+        if s[0] == c:
+            return c, s[1:]
         else:
-            sys.stdout.write(f"{name}: not found")
-        sys.stdout.write("\n")
+            return None, s[1:]
 
-    def pwd(self, *args, **kwargs):
-        sys.stdout.write(self.current_dir + "\n")
 
-    def cd(self, *args, **kwargs):
-        path = args[0]
-        if path == "~":
-            self.current_dir = os.environ.get("HOME")
-        elif os.path.isabs(path) and os.path.isdir(path):
-            self.current_dir = path
-        elif os.path.isdir(os.path.join(self.current_dir, path)):
-            new_path = os.path.abspath(os.path.join(self.current_dir, path))
-            if os.path.isdir(new_path):
-                self.current_dir = new_path
-            else:
-                sys.stdout.write(f"cd: {path}: No such file or directory\n")
-        else:
-            sys.stdout.write(f"cd: {path}: No such file or directory\n")
+def parse_whitespace(s):
+    return parse_any(
+        [
+            parse_char(),
+        ]
+    )
 
-    def _resolve_file_executability(
-        self, cmd, mode=os.F_OK | os.X_OK, path=None
-    ) -> str | None:
-        use_bytes = isinstance(cmd, bytes)
 
-        dirname, cmd = os.path.split(cmd)
-        if dirname:
-            path = [dirname]
-        else:
-            if path is None:
-                path = os.environ.get("PATH", None)
-                if path is None:
-                    try:
-                        path = os.confstr("CS_PATH")
-                    except (AttributeError, ValueError):
-                        path = os.defpath
+def parse_word_char(s):
+    if len(s) > 0:
+        if s[0] in [""]:
+            result = s[0]
+    if len(s) > 1:
+        remaining = s[1:]
+    return result, remaining
 
-            if not path:
-                return None
-            if use_bytes:
-                path = os.fsencode(path)
-                path = path.split(os.fsencode(os.pathsep))
-            else:
-                path = os.fsdecode(path)
-                path = path.split(os.pathsep)
 
-        files = [cmd]
+def parse_word(s):
+    i = 0
+    while i < len(s) and s[i] != " ":
+        i += 1
+    _, r = parse_whitespaces(s[i:])
+    return s[:i], r
 
-        seen = set()
-        for dir in path:
-            normdir = os.path.normcase(dir)
-            if not normdir in seen:
-                seen.add(normdir)
-                for thefile in files:
-                    name = os.path.join(dir, thefile)
-                    if (
-                        os.path.exists(name)
-                        and os.access(name, mode)
-                        and not os.path.isdir(name)
-                    ):
-                        return name
-        return None
 
-    #  echo 'test     hello' 'example''world'
-    #  Expected: "test     hello exampleworld"
+def parse_simple_quotes(s):
+    if s[0] == "'":
+        i = 1
+        while i < len(s) and s[i] != "'":
+            i += 1
+        _, r = parse_whitespaces(s[i:])
+        return s[:i], r
+    else:
+        return ("", s)
 
-    def _parse_echo_arguments(self, arguments):
-        args = []
-        in_quote = False
-        quote_char = ""
-        current = ""
-        i = len("echo") + 1
 
-        while i < len(arguments):
-            c = arguments[i]
-            if c in ("'", '"'):
-                if not in_quote:
-                    in_quote = True
-                    quote_char = c
-                elif quote_char == c:
-                    in_quote = False
-                    quote_char = ""
+def main():
+    shell_builtin = ["exit", "echo", "type", "pwd"]
+
+    paths = os.getenv("PATH").split(":")
+
+    executables = {}
+    for dir in paths:
+        if os.path.isdir(dir):
+            for file in os.listdir(dir):
+                if file not in executables and os.path.isfile(os.path.join(dir, file)):
+                    executables[file] = os.path.join(dir, file)
+
+    while True:
+        # Uncomment this block to pass the first stage
+        sys.stdout.write("$ ")
+
+        # Wait for user input
+        input_str = input()
+
+        # Split user input
+        cmd = []
+        cur_arg = ""
+        it = iter(input_str)
+        try:
+            c = next(it)
+            while True:
+                if c == "'":
+                    c = next(it)
+                    while c != "'":
+                        cur_arg += c
+                        c = next(it)
+                    c = next(it)
+
+                elif c == '"':
+                    c = next(it)
+                    while c != '"':
+                        if c == "\\":
+                            c = next(it)
+                            if c in '\\$"':
+                                cur_arg += c
+                                c = next(it)
+                            else:
+                                cur_arg += "\\"
+                        else:
+                            cur_arg += c
+                            c = next(it)
+                    c = next(it)
+
+                elif c == "\\":
+                    c = next(it)
+                    cur_arg += c
+                    c = next(it)
+
+                elif c == " ":
+                    cmd.append(cur_arg)
+                    cur_arg = ""
+                    while c == " ":
+                        c = next(it)
+
                 else:
-                    current += c
-                i += 1
-            elif c == "\\":
-                i += 1
-                if quote_char == '"':
-                    if i < len(arguments) and arguments[i] in (
-                        "\\",
-                        '"',
-                        "`",
-                        "$",
-                        "\n",
-                    ):
-                        current += arguments[i]
-                    else:
-                        current += c
-                    i += 1
-                elif quote_char == "'":
-                    current += c
-                elif i < len(arguments):
-                    current += arguments[i]
-                    i += 1
-            elif in_quote:
-                current += c
-                i += 1
-            else:
-                if c == " " and current:
-                    args.append(current)
-                    current = ""
-                elif c != " ":
-                    # Handle non single/double quotes
-                    current += c
-                i += 1
-        if current:
-            args.append(current)
-        return args
+                    cur_arg += c
+                    c = next(it)
 
-    def _input_spliter(self, cmd: str) -> Tuple[str, List[str]]:
-        splited_cmd = cmd.split()
-        if splited_cmd[0].strip() == "echo":
-            return splited_cmd[0].strip(), self._parse_echo_arguments(cmd)
-        return splited_cmd[0].strip(), splited_cmd[1:]
+        except StopIteration:
+            cmd.append(cur_arg)
 
-    def input_dispachter(self, cmd: str):
-        cmd_name, cmd_args = self._input_spliter(cmd)
-        if cmd_name in self.commands:
-            self.commands[cmd_name](*cmd_args)
-            return
-        elif self._resolve_file_executability(cmd_name):
-            os.system(cmd)
-            return
-        else:
-            sys.stdout.write(f"{cmd_name}: command not found\n")
-
-    def run(self):
-        while True:
-            sys.stdout.write("$ ")
-            cmd = input()
-            self.input_dispachter(cmd)
+        # Run command
+        match cmd:
+            case ["exit", code]:
+                sys.exit(int(code))
+            case ["pwd"]:
+                print(os.getcwd())
+            case ["cd", path]:
+                if path[0] == "~":
+                    path = os.path.normpath(os.getenv("HOME") + "/" + path[1:])
+                if os.path.isdir(path):
+                    os.chdir(path)
+                else:
+                    print(f"cd: {path}: No such file or directory")
+            case ["echo", *args]:
+                print(" ".join(args))
+            case ["type", cmd2]:
+                if cmd2 in shell_builtin:
+                    print(f"{cmd2} is a shell builtin")
+                elif cmd2 in executables:
+                    print(f"{cmd2} is {executables[cmd2]}")
+                else:
+                    print(f"{cmd2}: not found")
+            case [cmd, *args] if cmd in executables:
+                subprocess.run([cmd] + args)
+            case [cmd, *args]:
+                print(f"{cmd}: command not found")
 
 
 if __name__ == "__main__":
-    shell = Shell()
-    shell.run()
+    main()
