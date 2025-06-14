@@ -1,40 +1,69 @@
 import sys
-import shutil
+import os
+
+commands = {}
+space = " "
+errors = []
+path = os.environ["PATH"]
 
 
-def echo(command):
-    echoed_command = command[5:]
-    print(echoed_command)
+def stopShell(args=["0"]):
+    sys.exit(int(args[0]))
 
 
-def invalid(command):
-    print(f"{command}: command not found")
+def echo(args):
+    print(space.join(args))
 
 
-def type(command):
-    types = ["echo", "exit", "type"]
-    if command[5:] in types:
-        print(f"{command[5:]} is a shell builtin")
-    elif path := shutil.which(command[5:]):
-        print(f"{command[5:]} is {path}")
+def typeOf(args=["invalid"]):
+    checkType = space.join(args)
+    if checkType in commands:
+        print(f"{checkType} is a shell builtin")
+    elif findExe(args[0]):
+        exePath = findExe(args[0])
+        print(f"{args[0]} is {exePath}")
     else:
-        print(f"{command[5:]}: not found")
+        print(f"{checkType}: not found")
+
+
+def findExe(exe):
+    paths = path.split(":")
+
+    for pathDir in paths:
+        try:
+            for filename in os.listdir(pathDir):
+                if filename == exe:
+                    filePath = os.path.join(pathDir, filename)
+                    if os.path.isfile(filePath) and os.access(filePath, os.X_OK):
+                        return filePath
+        except:
+            errors.append("bad path permissions")
+
+    return None
+
+
+def handleInput(inputs):
+    global commands
+    commands.update({"exit": stopShell, "echo": echo, "type": typeOf})
+    inputArr = inputs.split(" ")
+
+    if inputArr[0] in commands:
+        commands[inputArr[0]](inputArr[1:] if len(inputArr) > 1 else ["0"])
+    elif findExe(inputArr[0]):
+        os.system(inputs)
+    else:
+        print(f"{inputs}: command not found")
+
+    main()
 
 
 def main():
-    true = 1
-    while true:
-        sys.stdout.write("$ ")
-        command = input()
+    # Uncomment this block to pass the first stage
+    sys.stdout.write("$ ")
 
-        if command == "exit 0":
-            true = 0
-        elif command[:5] == "echo ":
-            echo(command)
-        elif command[:5] == "type ":
-            type(command)
-        else:
-            invalid(command)
+    # Wait for user input
+    command = input()
+    handleInput(command)
 
 
 if __name__ == "__main__":
