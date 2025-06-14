@@ -1,155 +1,86 @@
-import sys
 import os
-import subprocess
-from functools import partial
+import shutil
+import sys
+import shlex
 
 
-def parse_any(parsers, s):
-    for parser in parsers:
-        res, remaining = parser(s)
-        if res:
-            return res, remaining
-    return None, s
+def exit_command(command):
+    func, code = command.split()
+    return eval(func)(int(code))
 
 
-def parse_char(c, s):
-    if len(s) == 0:
-        return None, s
-    else:
-        if s[0] == c:
-            return c, s[1:]
-        else:
-            return None, s[1:]
+def echo(command):
+    parameters = shlex.split(command, posix=True)
+    print(" ".join(parameters[1:]))
 
 
-def parse_whitespace(s):
-    return parse_any(
-        [
-            parse_char(),
-        ]
-    )
+def error(command):
+    print(f"{command}: not found")
 
 
-def parse_word_char(s):
-    if len(s) > 0:
-        if s[0] in [""]:
-            result = s[0]
-    if len(s) > 1:
-        remaining = s[1:]
-    return result, remaining
+def run_programme(command):
+    args = shlex.split(command, posix=True)
+    if shutil.which(args[0]):
+        os.system(command)
+        return
+    return error(command)
 
 
-def parse_word(s):
-    i = 0
-    while i < len(s) and s[i] != " ":
-        i += 1
-    _, r = parse_whitespaces(s[i:])
-    return s[:i], r
+def type_of(command):
+    builtin = command.split()[1]
+    if builtin in BUILTIN_FUNCTIONS.keys():
+        print(f"{builtin} is a shell builtin")
+        return
+    if builtin_path := shutil.which(builtin):
+        print(f"{builtin} is {builtin_path}")
+        return
+    error(builtin)
 
 
-def parse_simple_quotes(s):
-    if s[0] == "'":
-        i = 1
-        while i < len(s) and s[i] != "'":
-            i += 1
-        _, r = parse_whitespaces(s[i:])
-        return s[:i], r
-    else:
-        return ("", s)
+def pwd(_command):
+    return print(os.getcwd())
+
+
+def cd(command):
+    nav_path = command.split()[1]
+    os.path.expanduser(nav_path)
+    if nav_path == "~":
+        nav_path = os.environ["HOME"]
+    try:
+        os.chdir(nav_path)
+    except FileNotFoundError:
+        print(f"cd: {nav_path}: No such file or directory")
+
+
+def command_matcher(command):
+    if not command:
+        return error
+    function_str = command.split()[0]
+    function = BUILTIN_FUNCTIONS.get(function_str)
+    if not function:
+        return run_programme
+    return function
+
+
+BUILTIN_FUNCTIONS = {
+    "exit": exit_command,
+    "echo": echo,
+    "type": type_of,
+    "pwd": pwd,
+    "cd": cd,
+}
+
+
+def start():
+    sys.stdout.write("$ ")
+
+    command = input()
+    command_matcher(command)(command)
+    start()
 
 
 def main():
-    shell_builtin = ["exit", "echo", "type", "pwd"]
-
-    paths = os.getenv("PATH").split(":")
-
-    executables = {}
-    for dir in paths:
-        if os.path.isdir(dir):
-            for file in os.listdir(dir):
-                if file not in executables and os.path.isfile(os.path.join(dir, file)):
-                    executables[file] = os.path.join(dir, file)
-
-    while True:
-        # Uncomment this block to pass the first stage
-        sys.stdout.write("$ ")
-
-        # Wait for user input
-        input_str = input()
-
-        # Split user input
-        cmd = []
-        cur_arg = ""
-        it = iter(input_str)
-        try:
-            c = next(it)
-            while True:
-                if c == "'":
-                    c = next(it)
-                    while c != "'":
-                        cur_arg += c
-                        c = next(it)
-                    c = next(it)
-
-                elif c == '"':
-                    c = next(it)
-                    while c != '"':
-                        if c == "\\":
-                            c = next(it)
-                            if c in '\\$"':
-                                cur_arg += c
-                                c = next(it)
-                            else:
-                                cur_arg += "\\"
-                        else:
-                            cur_arg += c
-                            c = next(it)
-                    c = next(it)
-
-                elif c == "\\":
-                    c = next(it)
-                    cur_arg += c
-                    c = next(it)
-
-                elif c == " ":
-                    cmd.append(cur_arg)
-                    cur_arg = ""
-                    while c == " ":
-                        c = next(it)
-
-                else:
-                    cur_arg += c
-                    c = next(it)
-
-        except StopIteration:
-            cmd.append(cur_arg)
-
-        # Run command
-        match cmd:
-            case ["exit", code]:
-                sys.exit(int(code))
-            case ["pwd"]:
-                print(os.getcwd())
-            case ["cd", path]:
-                if path[0] == "~":
-                    path = os.path.normpath(os.getenv("HOME") + "/" + path[1:])
-                if os.path.isdir(path):
-                    os.chdir(path)
-                else:
-                    print(f"cd: {path}: No such file or directory")
-            case ["echo", *args]:
-                print(" ".join(args))
-            case ["type", cmd2]:
-                if cmd2 in shell_builtin:
-                    print(f"{cmd2} is a shell builtin")
-                elif cmd2 in executables:
-                    print(f"{cmd2} is {executables[cmd2]}")
-                else:
-                    print(f"{cmd2}: not found")
-            case [cmd, *args] if cmd in executables:
-                subprocess.run([cmd] + args)
-            case [cmd, *args]:
-                print(f"{cmd}: command not found")
+    start()
 
 
 if __name__ == "__main__":
