@@ -4,6 +4,8 @@ import subprocess
 import shlex
 import readline
 
+HISTORY_LIST = []
+
 SHELL_BUILTIN_COMMANDS = [
     "echo",
     "exit",
@@ -122,6 +124,7 @@ def main():
     while True:
         # Wait for user input
         command = input("$ ")
+        HISTORY_LIST.append(command)
         if "|" in command:
             execute_pipeline_commands(command.split("|"))
             continue
@@ -165,6 +168,9 @@ def main():
             sys.exit(0)
         elif commands[0] == "type":
             handle_type_command(commands)
+        elif commands[0] == "history":
+            for i, cmd in enumerate(HISTORY_LIST):
+                print(f"{i + 1} {cmd}")
         elif commands[0] == "pwd":
             print(os.getcwd())
         elif commands[0] == "cd":
